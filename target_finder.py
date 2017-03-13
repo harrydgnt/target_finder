@@ -63,8 +63,8 @@ def read_roadmap_bed(input_file):
             end        = line.split()[2]
             state      = line.split()[3]
             index_dict[chromosome].append((start, state))
-            state_dict[state] += (start - end)
-    return index_dict
+            state_dict[state] += (int(start) - int(end))
+    return index_dict, state_dict
 
 def read_whole_sets(input_file_list):
     sample_dict = {}
@@ -124,6 +124,7 @@ def calculate_state_proportions(input_state_dict):
     for key, value in input_state_dict.iteritems():
         total_number += value 
     state_proportion_dict = {} 
+    # print total_number
     for key, value in input_state_dict.iteritems():
         state_proportion_dict[key] = 1.0 * value / total_number
     return state_proportion_dict
@@ -201,6 +202,7 @@ def find_good_match(metadata, snp_tissue_dict):
 
         if score >= 0.9:
             print tissue, metadata[tissue], score 
+    return sorted_score_list
 
 
 def test_pipeline_T1D_simple():
@@ -225,8 +227,24 @@ def test_pipeline_T1D_simple():
     #1. find block
 
     snp_result = t1d_match(epigenetic_marks, snp_list)
-    find_good_match(metadata_list, snp_result)
+    score_sorted_list = find_good_match(metadata_list, snp_result)
     proportion_state_dict = calculate_whole_sample_state_proportion(state_dict)
+    
+    simple_output_file_score = '/Users/harryyang/Documents/Research/Class/Com Sci 225/target_finder/simple_score_distribution_T1D.txt'
+    with open(simple_output_file_score, 'w') as simple_outfile:
+        for tissue_score_tuple in score_sorted_list:
+            # out_str = ""
+            tissue = tissue_score_tuple[0]
+            score = tissue_score_tuple[1]
+            out_str = tissue + '\t' + str(score)
+            simple_outfile.write(out_str)
+            print out_str
+            out_str = ""
+
+    print "simple enrichment finished"
+
+
+
 
 def test_pipeline_T1D_novel():
     # read whole set 
@@ -247,11 +265,27 @@ def test_pipeline_T1D_novel():
     print metadata_list
 
     # process
-    #1. find block
+    #1. find proportion of the block 
 
     snp_result = t1d_match(epigenetic_marks, snp_list)
-    find_good_match(metadata_list, snp_result)
+    #find_good_match(metadata_list, snp_result)
     proportion_state_dict = calculate_whole_sample_state_proportion(state_dict)
+    print proportion_state_dict
+    # make distribution for plots
+    tissue_state_proportion_tsv = '/Users/harryyang/Documents/Research/Class/Com Sci 225/target_finder/roadmap_15core_marks_proportion_per_tissue.txt'
+    tissue_count = 0
+    with open(tissue_state_proportion_tsv, 'w') as outfile:
+        for key, value in proportion_state_dict.iteritems():
+            tissue_count += 1
+            tissue_proportion = str(key) + "\t" + str(metadata_list[key])
+            for i in range(1,16):
+                tissue_proportion += '\t' + str(value[str(i)])
+            if tissue_count % 10 == 0:
+                print "exported proportion for %i tissues! " % tissue_count
+            outfile.write(tissue_proportion)
+    print "DONE! "
+
+
 def test_pipeline_AD():
     # read whole set 
     # TODO - make file 
@@ -279,5 +313,5 @@ def test_pipeline_AD():
 
 if __name__ == "__main__":
     test_pipeline_T1D_simple()
-    test_pipeline_T1D_novel()
+    # test_pipeline_T1D_novel()
     # test_pipeline_AD()
