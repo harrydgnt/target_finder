@@ -53,6 +53,7 @@ def read_roadmap_bed(input_file):
     # TSV
 	# chromosome, start (0-based), stop (1-based), state_label_mnemonic for that region
     index_dict = defaultdict(list)
+    state_dict = defaultdict(int)
     with open(input_file, 'r') as f:
         for line in f:
             # access by chromosome, search by start 
@@ -62,21 +63,24 @@ def read_roadmap_bed(input_file):
             end        = line.split()[2]
             state      = line.split()[3]
             index_dict[chromosome].append((start, state))
+            state_dict[state] += (start - end)
     return index_dict
 
 def read_whole_sets(input_file_list):
     sample_dict = {}
+    sample_dict_state = {}
     count = 0
     with open(input_file_list, 'r') as f:
         for line in f:
             # line = E023_15_coreMarks_mnemonics.bed
             count += 1
             sample_id = line.split('/')[-1].split('_')[0]
-            state_dict = read_roadmap_bed(line.rstrip())
-            sample_dict[sample_id] = state_dict
+            index_dict, state_dict = read_roadmap_bed(line.rstrip())
+            sample_dict[sample_id] = index_dict
+            sample_dict_state[sample_id] = state_dict
             if count % 10 == 0:
                 print "Processed: %i tissues" % (count) 
-    return sample_dict
+    return sample_dict, sample_dict_state
 
 def read_metadata(input_metadata):
     metadata_dict = {}
@@ -101,6 +105,30 @@ def read_gwas_SNP_hits_T1D(input_t1d_snp_hits):
 ######################
 # Analysis Functions #
 ######################
+
+def calculate_whole_sample_state_proportion(input_multiple_sample_state_dict):
+    # INPUT ==> Key = sample, value = state_dict for state proportion calculatinon
+    new_proportion_dict = {}
+    for key, value in input_multiple_sample_state_dict.iteritems():
+        sample = key 
+        input_dict = value 
+        proportion_state_dict = calculate_state_proportions(input_dict)
+        new_proportion_dict[sample] = proportion_state_dict
+    return new_proportion_dict
+
+
+
+def calculate_state_proportions(input_state_dict):
+    # INPUT = state_dict - key = state, value = num of bases in that state 
+    total_number = 0
+    for key, value in input_state_dict.iteritems():
+        total_number += value 
+    state_proportion_dict = {} 
+    for key, value in input_state_dict.iteritems():
+        state_proportion_dict[key] = 1.0 * value / total_number
+    return state_proportion_dict
+
+
 
 def t1d_match(input_roadmap_location_dict, input_snp_hits_list):
     # INPUT - Roadmap_dict - key = tissue ID, value = dict with chromosome -> list of positions
@@ -138,7 +166,9 @@ def t1d_match(input_roadmap_location_dict, input_snp_hits_list):
 def find_good_match(metadata, snp_tissue_dict):
     # INPUT - metadata - tissue ID -> description 
     # INPUT - SNP tissue dict SNP(chr, pos) -> [(tissue, state)]
-    active_state_list = [1,2,4,5,6,7]
+    active_state_list = [1,2,3,4,5,6,7,8] # all the active sites 
+    # active_state_list = [3,6,7,12] # H3K4me1 associated states 
+    # this is noted by the consortium to be most tissue specific
     total_count = Counter()
     score_dict = defaultdict(float)
     for snp, tissue_result_list in snp_tissue_dict.iteritems():
@@ -169,11 +199,11 @@ def find_good_match(metadata, snp_tissue_dict):
         tissue = tissue_score_tuple[0]
         score = tissue_score_tuple[1]
 
-        if score >= 1.0:
+        if score >= 0.9:
             print tissue, metadata[tissue], score 
 
 
-def test_pipeline_T1D():
+def test_pipeline_T1D_simple():
     # read whole set 
     # TODO - make file 
     # input files 
@@ -183,10 +213,59 @@ def test_pipeline_T1D():
 
     # Read tissue files
 
+    epigenetic_marks, state_dict = read_whole_sets(encode_bed_list)
+    metadata_list = read_metadata(metadata_file)
+    snp_list = read_gwas_SNP_hits_T1D(T1D_SNP_list)
+
+    # print glance(epigenetic_marks)
+    # print snp_list
+    print metadata_list
+
+    # process
+    #1. find block
+
+    snp_result = t1d_match(epigenetic_marks, snp_list)
+    find_good_match(metadata_list, snp_result)
+    proportion_state_dict = calculate_whole_sample_state_proportion(state_dict)
+
+def test_pipeline_T1D_novel():
+    # read whole set 
+    # TODO - make file 
+    # input files 
+    encode_bed_list = '/Users/harryyang/Documents/Research/Class/Com Sci 225/target_finder/roadmap_15core_marks_list.txt'
+    T1D_SNP_list = '/Users/harryyang/Documents/Research/Class/Com Sci 225/target_finder/T1D_snp_list.txt'
+    metadata_file = '/Users/harryyang/Documents/Research/Class/Com Sci 225/target_finder/roadmap_metadata.txt'
+
+    # Read tissue files
+
+    epigenetic_marks, state_dict = read_whole_sets(encode_bed_list)
+    metadata_list = read_metadata(metadata_file)
+    snp_list = read_gwas_SNP_hits_T1D(T1D_SNP_list)
+
+    # print glance(epigenetic_marks)
+    # print snp_list
+    print metadata_list
+
+    # process
+    #1. find block
+
+    snp_result = t1d_match(epigenetic_marks, snp_list)
+    find_good_match(metadata_list, snp_result)
+    proportion_state_dict = calculate_whole_sample_state_proportion(state_dict)
+def test_pipeline_AD():
+    # read whole set 
+    # TODO - make file 
+    # input files 
+    encode_bed_list = '/Users/harryyang/Documents/Research/Class/Com Sci 225/target_finder/roadmap_15core_marks_list.txt'
+    AD_SNP_list = '/Users/harryyang/Documents/Research/Class/Com Sci 225/target_finder/AD_snp_list.txt'
+    metadata_file = '/Users/harryyang/Documents/Research/Class/Com Sci 225/target_finder/roadmap_metadata.txt'
+
+    # Read tissue files
+
     epigenetic_marks = read_whole_sets(encode_bed_list)
     metadata_list = read_metadata(metadata_file)
 
-    snp_list = read_gwas_SNP_hits_T1D(T1D_SNP_list)
+    snp_list = read_gwas_SNP_hits_T1D(AD_SNP_list)
 
     # print glance(epigenetic_marks)
     # print snp_list
@@ -199,4 +278,6 @@ def test_pipeline_T1D():
     find_good_match(metadata_list, snp_result)
 
 if __name__ == "__main__":
-    test_pipeline_T1D()
+    test_pipeline_T1D_simple()
+    test_pipeline_T1D_novel()
+    # test_pipeline_AD()
