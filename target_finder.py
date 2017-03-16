@@ -245,14 +245,16 @@ def t1d_LD_match(input_roadmap_location_dict, input_LD_dict):
                 tissue_result_list.append((tissue, state))
             SNP_search_result_dict[snp] = tissue_result_list
         LD_matched_dict[index_SNP] = SNP_search_result_dict
-    return SNP_search_result_dict
+    return LD_matched_dict
 
 
-def find_good_match(metadata, snp_tissue_dict):
+def find_good_match(metadata, snp_tissue_dict, active):
     # INPUT - metadata - tissue ID -> description 
     # INPUT - SNP tissue dict SNP(chr, pos) -> [(tissue, state)]
-    # active_state_list = [1,2,3,4,5,6,7,8] # all the active sites 
-    active_state_list = [2,3,6,7,11,12] # H3K4me1 associated states 
+    if active:
+        active_state_list = [1,2,3,4,5,6,7,8] # all the active sites 
+    else:
+        active_state_list = [2,3,6,7,11,12] # H3K4me1 associated states 
     # this is noted by the consortium to be most tissue specific
     total_count = Counter()
     score_dict = defaultdict(float)
@@ -342,7 +344,7 @@ def emission_matrix_SNP_by_tissue(metadata, snp_tissue_dict, emission_dict):
 
 
 
-def emission_matrix_SNP_LD (metadata, snp_tissue_dict, emission_dict, LD_SNP_dict):
+def emission_matrix_SNP_LD (metadata, emission_dict, LD_SNP_dict):
     # INPUT - metadata - tissue ID -> description 
     # INPUT - SNP tissue dict SNP(chr, pos) -> [(tissue, state)]
     # INPUT - emission dict - key = int(state), value = dict(key = histone modification, value = emission probability)
@@ -352,39 +354,130 @@ def emission_matrix_SNP_LD (metadata, snp_tissue_dict, emission_dict, LD_SNP_dic
     # get state_matrix 
     SNP_list = []
 
+    # TODO - rewrite 
 
     state_matrix = pd.DataFrame()
-    
-    for key, value in LD_SNP_dict:
-        for SNP, tissue_result_list in snp_tissue_dict.iteritems():
-            state_vector = pd.DataFrame(columns = [SNP])
-            for tissue_state_tuple in tissue_result_list:
+    sum_matrix = pd.DataFrame()
+    num_SNP = 0
+    snp_dict = {}
+    for index_SNP, snp_tissue_dict in LD_SNP_dict.iteritems():
+        num_SNP += 1
+        state_info_matrix = pd.DataFrame()
+        for snp_chr_pos_rsqured_tuple, tissue_state_tuple_list in snp_tissue_dict.iteritems():
+            print snp_chr_pos_rsqured_tuple
+            snp = snp_chr_pos_rsqured_tuple
+            snp_tissue_matrix = pd.DataFrame(columns = [snp])
+            chromosome = snp_chr_pos_rsqured_tuple[0]
+            position = snp_chr_pos_rsqured_tuple[1]
+            rsquared_value = snp_chr_pos_rsqured_tuple[2]
+            # new_snp_tuple = (index_SNP, chromosome, position, rsquared_value)
+            count = 0
+            for tissue_state_tuple in tissue_state_tuple_list:
+                count += 1
                 tissue = tissue_state_tuple[0]
-                state = int(tissue_state_tuple[1].split('_')[0])
-                temp_state = pd.DataFrame([state], index = [tissue], columns = [SNP])
-                # print temp_state
-                state_vector = state_vector.append(temp_state)
-            
-            # print state_vector
-            state_matrix = pd.concat([state_matrix, state_vector], axis = 1) 
+                state = int(tissue_state_tuple[1].split('_')[0]) 
+                new_vector = pd.DataFrame([state],index = [tissue], columns = [snp] )
+                # if count % 100 == 0:
+                #     print tissue, state, new_vector
+                snp_tissue_matrix = snp_tissue_matrix.append(new_vector)
+                # print "NEWVECTOR",new_vector
+            # print snp_tissue_matrix
+            state_info_matrix = pd.concat([state_info_matrix, snp_tissue_matrix], axis = 1)
+        print "STATE_MATRIX", state_info_matrix
 
-        print state_matrix
-        # sys.exit(33)
 
-        # make summary_matrix for each tissue
+        print "processing LD calculation for snp %s" % num_SNP
         summary_matrix = pd.DataFrame(columns = range(1,num_state + 1))
-        for row_index, row in state_matrix.iterrows():
+        snp_specific_dict = {}
+        for row_index, row in state_info_matrix.iterrows():
             in_list = [0] * num_state
             row_vector = pd.DataFrame(0, index = [row_index], columns = range(1,num_state + 1))
-            for pos_state in row:
-                row_vector[pos_state] += 1 
+            for current_snp in list(state_info_matrix):
+                pos_state = row[current_snp]
+                rsq = current_snp[2]
+                row_vector[pos_state] += 1.0 * float(rsq)
             print row_vector
-            summary_matrix = summary_matrix.append(row_vector)
-        print summary_matrix
+            summary_matrix = summary_matrix.append(row_vector) 
+        snp_dict[index_SNP] = summary_matrix
+        sum_matrix = pd.concat([sum_matrix, summary_matrix], axis = 1)
 
-    return state_matrix, summary_matrix
 
 
+        state_matrix = pd.concat([state_matrix, state_info_matrix], axis = 1)
+    print sum_matrix, snp_dict
+    return state_matrix, snp_dict
+
+
+
+    # for index_SNP, snp_tissue_dict in LD_SNP_dict:
+    #     for SNP, tissue_result_list in snp_tissue_dict.iteritems():
+    #         state_vector = pd.DataFrame(columns = [SNP])
+    #         for tissue_state_tuple in tissue_result_list:
+    #             tissue = tissue_state_tuple[0]
+    #             state = int(tissue_state_tuple[1].split('_')[0])
+    #             temp_state = pd.DataFrame([state], index = [tissue], columns = [SNP])
+    #             # print temp_state
+    #             state_vector = state_vector.append(temp_state)
+            
+    #         # print state_vector
+    #         state_matrix = pd.concat([state_matrix, state_vector], axis = 1) 
+
+    #     print state_matrix
+    #     # sys.exit(33)
+
+    #     # make summary_matrix for each tissue
+    #     summary_matrix = pd.DataFrame(columns = range(1,num_state + 1))
+    #     for row_index, row in state_matrix.iterrows():
+    #         in_list = [0] * num_state
+    #         row_vector = pd.DataFrame(0, index = [row_index], columns = range(1,num_state + 1))
+    #         for pos_state in row:
+    #             row_vector[pos_state] += 1 
+    #         print row_vector
+    #         summary_matrix = summary_matrix.append(row_vector)
+    #     print summary_matrix
+
+    # return state_matrix, summary_matrix
+
+
+def process_matrix(input_tissue_pos_state_matrix, simple):
+    if simple:
+        active_state_list = [1,2,3,4,5,6,7,8] # all the active sites 
+    else:
+        active_state_list = [3,6,7,12] # H3K4me1 associated states 
+    new_matrix = pd.DataFrame()
+    for tissue, pos_state_vector in input_tissue_pos_state_matrix.iterrows():
+        print pos_state_vector.transpose()
+        binarized_tissue = [ 1 if x in active_state_list else 0 for x in pos_state_vector]
+        print list(input_tissue_pos_state_matrix)
+        print binarized_tissue
+        print tissue 
+        new_vector = pd.DataFrame([binarized_tissue], index = [tissue], columns = list(input_tissue_pos_state_matrix))
+        new_matrix = pd.concat([new_matrix, new_vector], axis = 0)
+    return new_matrix 
+
+def normalize_matrix(input_binary_matrix):
+    new_matrix = input_binary_matrix.copy().astype(float)
+    for i in range(len(list(input_binary_matrix))):
+        column = input_binary_matrix[list(input_binary_matrix)[i]]
+        total_score = 0
+        for entry in column:
+            total_score += entry
+        for j in range(len(column)):
+            if total_score == 0.0:
+                total_score = 1.0
+
+            print i,j, new_matrix.index[j], list(new_matrix)[i], new_matrix[list(new_matrix)[i]][new_matrix.index[j]]*1.0/total_score
+            new_matrix.set_value(new_matrix.index[j], list(new_matrix)[i], new_matrix[list(new_matrix)[i]][new_matrix.index[j]]*1.0/total_score)
+    return new_matrix
+
+def sum_rows_in_matrix(input_normalized_matrix):
+    sum_dict = {}
+    for tissue, score_vector in input_normalized_matrix.iterrows():
+        tissue_score = 0.0
+        for score in score_vector:
+            tissue_score += score
+        sum_dict[tissue] = tissue_score
+    return sum_dict
 
 
 def test_pipeline_T1D_simple():
@@ -413,11 +506,44 @@ def test_pipeline_T1D_simple():
     #1. find block
 
     snp_result = t1d_match(epigenetic_marks, snp_list)
-    score_sorted_list = find_good_match(metadata_list, snp_result)
-    proportion_state_dict = calculate_whole_sample_state_proportion(state_dict)
+    score_sorted_list = find_good_match(metadata_list, snp_result, True)
+    # proportion_state_dict = calculate_whole_sample_state_proportion(state_dict)
     
     tissue_pos_state_matrix, summary_matrix = emission_matrix_SNP_by_tissue(metadata_list, snp_result, emission_dict)
+    simple_processed_matrix = process_matrix(tissue_pos_state_matrix, True)
+    simple_processed_matrix.to_csv(wrdir+"T1D_binarized_tissue_pos_state_matrix.txt", sep = '\t')
 
+    marker_processed_matrix = process_matrix(tissue_pos_state_matrix, False)
+    marker_processed_matrix.to_csv(wrdir + "T1D_binarized_H3K4Me1_pos_state_matrix.txt", sep = '\t')
+
+    overlap_processed_matricis = simple_processed_matrix.add(marker_processed_matrix, fill_value = 0)
+    overlap_processed_matricis.to_csv(wrdir + "T1D_binary_active_H3K4Me1_matrix.txt", sep = '\t')
+
+    simple_normalized_matrix = normalize_matrix(simple_processed_matrix)
+    print simple_normalized_matrix
+    simple_sum_dict = sum_rows_in_matrix(simple_normalized_matrix)
+
+    marker_normalized_matrix = normalize_matrix(marker_processed_matrix)
+    marker_sum_dict = sum_rows_in_matrix(marker_normalized_matrix)
+    
+    simple_sum_dict_sorted = sorted(simple_sum_dict.iteritems(), key = lambda (k,v): v, reverse = True)
+    marker_sum_dict_sorted = sorted(marker_sum_dict.iteritems(), key = lambda (k,v): v, reverse = True)
+
+    for item in simple_sum_dict_sorted[0:10]:
+        tissue = item[0]
+        score = item[1]
+        tissue_info = metadata_list[tissue]
+        print tissue, score, tissue_info
+    for item in marker_sum_dict_sorted[0:10]:
+        tissue = item[0]
+        score = item[1]
+        tissue_info = metadata_list[tissue]
+        print tissue, score, tissue_info
+    # print simple_sum_dict_sorted
+    # print marker_sum_dict_sorted
+
+    # print simple_processed_matrix
+    sys.exit(24)
     simple_output_file_score = '/Users/harryyang/Documents/Research/Class/Com Sci 225/target_finder/simple_score_distribution_T1D.txt'
     with open(simple_output_file_score, 'w') as simple_outfile:
         for tissue_score_tuple in score_sorted_list:
@@ -437,7 +563,36 @@ def test_pipeline_T1D_simple():
     print "simple enrichment finished"
 
 
+def find_max_state(input_idxsnp_matrix_dict):
+    new_snp_tissue_state_dict = {}
+    for idx_snp, summary_matrix in input_idxsnp_matrix_dict.iteritems():
+        tissue_state_dict = {}
+        for tissue, row in summary_matrix.iterrows():
+            tissue_state_dict[tissue] = row.idxmax(axis = 1)
+        new_snp_tissue_state_dict[idx_snp] = tissue_state_dict
+    return new_snp_tissue_state_dict
 
+def process_new_score_dict(input_snp_state_tissue_score_dict):
+
+    heatmap_matrix = pd.DataFrame()
+    active_state_list = [1,2,3,4,5,6,7,8]
+    for snp, state_dict in input_snp_state_tissue_score_dict.iteritems():
+        new_vector = pd.DataFrame(columns = [snp])
+        for tissue, state in state_dict.iteritems():
+            # binarize
+            dummy = -1
+            if int(state) in active_state_list:
+                dummy = 1
+            else:
+                dummy = 0
+            new_entry = pd.DataFrame([dummy], columns = [snp], index = [tissue])
+            new_vector = new_vector.append(new_entry)
+        heatmap_matrix = pd.concat([heatmap_matrix,new_vector], axis = 1)
+
+
+
+
+    return heatmap_matrix
 
 def test_pipeline_T1D_novel():
     # read whole set 
@@ -460,22 +615,48 @@ def test_pipeline_T1D_novel():
     # for key, value in LD_SNP_dict.iteritems():
     #     print key, value 
     # sys.exit(22)
+    emission_dict = import_emission(emission_file)
 
     # print glance(epigenetic_marks)
     # print snp_list
     # print metadata_list
 
 
+    # tissue_pos_state_matrix, summary_matrix = emission_matrix_SNP_by_tissue(metadata_list, snp_result, emission_dict)
 
     # process
-    #1. find proportion of the block 
-
+    #1. match block <-> positions
+    # 
     snp_result = t1d_LD_match(epigenetic_marks, LD_SNP_dict)
     print snp_result
+
+    # 2. Process them for LD aware states
+    # 2.1. calculate score_matrix
+    # def emission_matrix_SNP_LD (metadata, emission_dict, LD_SNP_dict):
+
+    total_matrix, result_snp_dict = emission_matrix_SNP_LD(metadata_list, emission_dict, snp_result)
+    new_score_dict = find_max_state(result_snp_dict)
+    print new_score_dict
+    new_score_dict = dict((k,v) for k, v in new_score_dict.iteritems() if v)
+    heatmap_matrix= process_new_score_dict(new_score_dict)
+    print heatmap_matrix
+    heatmap_matrix.to_csv(wrdir+'/T1D_LD_aware_heatmap_matrix.txt', sep = 't')
+
+
+    normalized_ld_matrix = normalize_matrix(heatmap_matrix)
+    score = sum_rows_in_matrix(normalized_ld_matrix)
+
+    sorted_list = sorted(score.iteritems(), key = lambda (k,v): v, reverse = True)
+    print sorted_list
+    for item in sorted_list[0:10]:
+        tissue = item[0]
+        score = item[1]
+        tissue_info = metadata_list[tissue]
+        print tissue, score, tissue_info
     sys.exit(23)
     #find_good_match(metadata_list, snp_result)
-    proportion_state_dict = calculate_whole_sample_state_proportion(state_dict)
-    print proportion_state_dict
+    # proportion_state_dict = calculate_whole_sample_state_proportion(state_dict)
+    # print proportion_state_dict
     # make distribution for plots
     tissue_state_proportion_tsv = '/Users/harryyang/Documents/Research/Class/Com Sci 225/target_finder/roadmap_15core_marks_proportion_per_tissue.txt'
     tissue_count = 0
